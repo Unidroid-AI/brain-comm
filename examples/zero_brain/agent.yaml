@@ -1,0 +1,6 @@
+entry: zero:ZeroBrain
+horizon: 1
+action_dim: 8
+max_gpu_mem_gb: 1
+parent_submission: null
+weights: {}
