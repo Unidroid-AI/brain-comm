@@ -1,6 +1,6 @@
 <p align="center">
   <strong>UNIDROID</strong><br>
-  Challenge submission and simulator
+  Training general and custom robot brains through challenges.
 </p>
 
 <h1 align="center">brain-comm</h1>
