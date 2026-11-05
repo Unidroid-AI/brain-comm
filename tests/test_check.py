@@ -39,6 +39,23 @@ def test_matching_hash(tmp_path: Path):
     check_submission(tmp_path)
 
 
+def test_hidden_weights_files_are_refused(tmp_path: Path):
+    _copy_zero(tmp_path)
+    payload = b"weights"
+    (tmp_path / "weights" / "model.bin").write_bytes(payload)
+    (tmp_path / "weights" / "params").mkdir()
+    (tmp_path / "weights" / "params" / ".extra.py").write_bytes(b"import os\n")
+    (tmp_path / "weights" / ".gitattributes").write_bytes(b"*.bin filter=lfs\n")
+    (tmp_path / "weights" / ".cache" / "huggingface").mkdir(parents=True)
+    (tmp_path / "weights" / ".cache" / "huggingface" / "x.metadata").write_bytes(b"meta")
+    _set_weights(tmp_path, {"model.bin": hashlib.sha256(payload).hexdigest()})
+    with pytest.raises(CheckError) as raised:
+        check_submission(tmp_path)
+    assert raised.value.errors == ["weights/params/.extra.py: hidden files are not allowed in weights/"]
+    (tmp_path / "weights" / "params" / ".extra.py").unlink()
+    check_submission(tmp_path)
+
+
 def test_oversize(tmp_path: Path):
     _copy_zero(tmp_path)
     (tmp_path / "train" / "blob.bin").write_bytes(b"x" * 2048)

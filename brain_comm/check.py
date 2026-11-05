@@ -16,6 +16,10 @@ from brain_comm.yaml_min import load_yaml
 
 REQUIRED_DIRS = ("brain", "weights", "train")
 _SHA256_HEX = 64
+HASH_CHUNK = 8 << 20
+# Written by Hugging Face downloads and git, not by the miner: never hashed.
+HF_ROOT_FILES = (".gitattributes", ".gitkeep")
+HF_CACHE_DIR = ".cache"
 
 
 class CheckError(Exception):
@@ -111,20 +115,39 @@ def _check_weights(submission: Path, config: dict, errors: list[str]) -> None:
     weights_dir = submission / "weights"
     if not weights_dir.is_dir():
         return
-    present = {
-        path.relative_to(weights_dir).as_posix()
-        for path in weights_dir.rglob("*")
-        if path.is_file() and not path.name.startswith(".")
-    }
+    present: set[str] = set()
+    for path in weights_dir.rglob("*"):
+        rel = path.relative_to(weights_dir)
+        if rel.parts[0] == HF_CACHE_DIR:
+            continue
+        if path.is_symlink():
+            errors.append(f"weights/{rel.as_posix()}: symlinks are not allowed")
+            continue
+        if not path.is_file():
+            continue
+        if rel.as_posix() in HF_ROOT_FILES:
+            continue
+        if any(part.startswith(".") for part in rel.parts):
+            # A hidden file could carry code or data past the hashes; nothing in weights/ may be skipped.
+            errors.append(f"weights/{rel.as_posix()}: hidden files are not allowed in weights/")
+            continue
+        present.add(rel.as_posix())
     declared_keys = set(declared)
     for rel in sorted(present - declared_keys):
         errors.append(f"weights file has no hash in agent.yaml: {rel}")
     for rel in sorted(declared_keys - present):
         errors.append(f"weights file listed in agent.yaml is missing: {rel}")
     for rel in sorted(present & declared_keys):
-        digest = hashlib.sha256((weights_dir / rel).read_bytes()).hexdigest()
-        if digest != str(declared[rel]).lower():
+        if _sha256(weights_dir / rel) != str(declared[rel]).lower():
             errors.append(f"sha256 mismatch for weights/{rel}")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(HASH_CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _check_size(submission: Path, max_gb: float | None, errors: list[str]) -> None:
